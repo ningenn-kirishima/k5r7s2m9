@@ -59,6 +59,14 @@
   .chip{background:var(--panel2);border:1px solid var(--line);color:var(--sub);
     padding:5px 10px;border-radius:20px;font-size:11.5px;cursor:pointer;transition:.15s;white-space:nowrap}
   .chip.on{border-color:var(--amber);color:var(--amber)}
+  .searchbox{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+    padding:9px 11px;border-radius:9px;font-size:12.5px}
+  .searchbox:focus{outline:none;border-color:var(--amber)}
+  .resetbtn{background:none;border:1px solid var(--line);color:var(--faint);
+    padding:4px 10px;border-radius:16px;font-size:10.5px;cursor:pointer;margin-left:auto}
+  .resetbtn:hover{border-color:var(--hide);color:var(--hide)}
+  .lbrow{display:flex;align-items:center;margin-bottom:7px}
+  .lbrow .lb{margin-bottom:0}
   .sortline{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
   .dirbtn{background:var(--panel2);border:1px solid var(--line);color:var(--ink);
     padding:5px 12px;border-radius:20px;font-size:11.5px;cursor:pointer}
@@ -191,7 +199,12 @@
       </div>
 
       <div class="sec">
-        <div class="lb">絞り込み</div>
+        <div class="lb">キーワード検索</div>
+        <input class="searchbox" id="search" type="text" placeholder="作品名で絞り込み" autocomplete="off">
+      </div>
+
+      <div class="sec">
+        <div class="lbrow"><span class="lb">絞り込み</span><button class="resetbtn" id="rf">リセット</button></div>
         <div class="chips" id="filters">
           <button class="chip" data-f="demo">体験版</button>
           <button class="chip" data-f="indie">個人開発</button>
@@ -202,23 +215,24 @@
       </div>
 
       <div class="sec">
-        <div class="lb">人気タグ（オンで絞り込み）</div>
+        <div class="lbrow"><span class="lb">人気タグ（オンで絞り込み）</span><button class="resetbtn" id="rt">リセット</button></div>
         <div class="chips" id="tags"></div>
       </div>
 
       <div class="sec">
-        <div class="lb">ジャンル（オンで絞り込み）</div>
+        <div class="lbrow"><span class="lb">ジャンル（オンで絞り込み）</span><button class="resetbtn" id="rg">リセット</button></div>
         <div class="chips" id="genres"></div>
       </div>
 
       <div class="sec">
-        <div class="lb">並び順</div>
+        <div class="lbrow"><span class="lb">並び順</span><button class="resetbtn" id="rs">リセット</button></div>
         <div class="sortline" id="sorts">
           <button class="chip sort" data-s="default">おすすめ</button>
           <button class="chip sort on" data-s="date">発売日</button>
           <button class="chip sort" data-s="rev">レビュー</button>
           <button class="chip sort" data-s="price">価格</button>
           <button class="chip sort" data-s="rank">ランク</button>
+          <button class="chip sort" data-s="tagpop">タグ人気</button>
           <button class="dirbtn" id="dirbtn">▼ 降順</button>
         </div>
       </div>
@@ -269,7 +283,7 @@ const STEPTITLE = {1:"画像で拾う", 2:"動画で決める", 3:"本採用"};
 
 let GAMES = [];
 let state = load();
-let step = 1, filters = new Set(), sort = "date", dir = "desc", hideMode = false;
+let step = 1, filters = new Set(), sort = "date", dir = "desc", hideMode = false, query = "";
 let onTags = new Set(JSON.parse(localStorage.getItem(TAGKEY) || "[]"));
 let onGenres = new Set(JSON.parse(localStorage.getItem("yuwasu_genres_on") || "[]"));
 
@@ -343,6 +357,31 @@ const dirbtn = document.getElementById("dirbtn");
 dirbtn.onclick = () => { dir = (dir==="desc")?"asc":"desc";
   dirbtn.textContent = dir==="desc" ? "▼ 降順" : "▲ 昇順"; render(); };
 
+const searchEl = document.getElementById("search");
+searchEl.oninput = () => { query = searchEl.value.trim().toLowerCase(); render(); };
+
+document.getElementById("rf").onclick = () => {
+  filters.clear();
+  document.querySelectorAll("#filters .chip").forEach(x => x.classList.remove("on"));
+  render();
+};
+document.getElementById("rt").onclick = () => {
+  onTags.clear(); saveTags();
+  document.querySelectorAll("#tags .chip").forEach(x => x.classList.remove("on"));
+  render();
+};
+document.getElementById("rg").onclick = () => {
+  onGenres.clear(); saveGenres();
+  document.querySelectorAll("#genres .chip").forEach(x => x.classList.remove("on"));
+  render();
+};
+document.getElementById("rs").onclick = () => {
+  sort = "date"; dir = "desc";
+  document.querySelectorAll(".sort").forEach(x => x.classList.toggle("on", x.dataset.s==="date"));
+  dirbtn.textContent = "▼ 降順";
+  render();
+};
+
 const hidebtn = document.getElementById("hidebtn");
 hidebtn.onclick = () => { hideMode = !hideMode; syncHideUI(); render(); };
 function syncHideUI(){
@@ -372,10 +411,12 @@ function buildChips(boxId, keyField, activeSet, saver, limit){
 function buildGenres(){
   buildChips("tags", "tags", onTags, saveTags, 20);
   buildChips("genres", "genres", onGenres, saveGenres, 12);
+  buildTagPop();
 }
 
 /* ---------- 絞り込み・並べ替え ---------- */
 function passFilter(g){
+  if(query && !(g.name||"").toLowerCase().includes(query)) return false;
   if(filters.has("demo") && !g.demo) return false;
   if(filters.has("indie") && !g.self_published) return false;
   if(filters.has("solo") && !g.solo) return false;
@@ -402,10 +443,21 @@ function sortList(list){
   else if(sort==="rev") arr.sort((a,b)=>m*((b.recommendations||0)-(a.recommendations||0)));
   else if(sort==="price") arr.sort((a,b)=>m*((b.price||0)-(a.price||0)));
   else if(sort==="rank") arr.sort((a,b)=>m*((ORDER[st(b.appid).rank]||0)-(ORDER[st(a.appid).rank]||0)));
+  else if(sort==="tagpop") arr.sort((a,b)=>m*(tagScore(b)-tagScore(a)));
   else if(dir==="asc") arr.reverse();
   return arr;
 }
 
+let TAGPOP = {};
+function buildTagPop(){
+  TAGPOP = {};
+  GAMES.forEach(g => (g.tags||[]).forEach(x => TAGPOP[x] = (TAGPOP[x]||0)+1));
+}
+function tagScore(g){
+  // その作品の最上位タグ（先頭）の、全体での出現数。人気タグを持つ作品ほど高い。
+  const t = (g.tags||[])[0];
+  return t ? (TAGPOP[t]||0) : 0;
+}
 function updateCounts(){
   const picked = GAMES.filter(g => st(g.appid).picked && !st(g.appid).hidden);
   const adopted = GAMES.filter(g => st(g.appid).adopted);
