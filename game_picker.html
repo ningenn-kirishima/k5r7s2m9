@@ -47,6 +47,8 @@
   .listtop{position:sticky;top:14px;z-index:5;background:var(--bg);isolation:isolate;
     display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
     padding-bottom:10px;margin-bottom:10px;border-bottom:1px solid var(--line)}
+  /* 固定バーの上に残る余白（sticky top分）を背景で塞ぎ、スクロールしたカードの覗き込みを防ぐ */
+  .listtop::before{content:"";position:absolute;left:0;right:0;bottom:100%;height:64px;background:var(--bg)}
   .listtop .steps{display:flex;flex-direction:row;gap:5px;flex-wrap:wrap}
   .listtop .step{width:auto}
   .listtop .exportbar{display:flex;gap:6px;flex-wrap:wrap}
