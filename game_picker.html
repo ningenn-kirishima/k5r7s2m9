@@ -126,22 +126,12 @@
     justify-content:center;font-size:12px;color:transparent;z-index:2}
   .tile.picked .check{background:var(--pick);border-color:var(--pick);color:#fff}
   .tile.markhide .check{background:var(--hide);border-color:var(--hide);color:#fff}
-  .tile .rk{position:absolute;top:6px;left:6px;font-size:10px;font-weight:800;color:#12101a;
-    padding:1px 6px;border-radius:5px;display:none;z-index:2}
-  .tile.ranked .rk{display:block}
+  .tile.adopted{border-color:var(--adopt);box-shadow:0 0 0 1px var(--adopt)}
+  .tile.adopted .check{background:var(--adopt);border-color:var(--adopt);color:#fff}
+  .tile.shot{border-color:var(--amber);box-shadow:0 0 0 1px var(--amber)}
+  .tile.shot .check{background:var(--amber);border-color:var(--amber);color:#12101a}
   .tile .steamlink{padding:0 8px 8px;font-size:11px}
   .tile .steamlink a{color:#8fb8e8;text-decoration:none}
-  .ranks{display:flex;gap:4px;padding:0 8px 8px}
-  .rb{flex:1;padding:6px 0;border-radius:7px;border:1px solid var(--line);background:var(--panel2);
-    color:var(--sub);font-size:12px;font-weight:800;cursor:pointer;transition:.1s}
-  .rb.on{color:#12101a}
-  .adoptrow{padding:0 8px 9px;display:flex;gap:6px}
-  .ab{flex:1;padding:7px 0;border-radius:8px;border:1px solid var(--adopt);background:var(--panel2);
-    color:var(--adopt);font-size:11.5px;font-weight:700;cursor:pointer;transition:.1s}
-  .ab.on{background:var(--adopt);color:#12101a}
-  .unpick{flex:1;padding:7px 0;border-radius:8px;border:1px solid var(--line);background:var(--panel2);
-    color:var(--sub);font-size:11.5px;font-weight:700;cursor:pointer;transition:.1s}
-  .unpick:active{background:var(--panel)}
 
   /* 非表示セクション */
   .hidesec{margin-top:26px;border-top:1px solid var(--line);padding-top:16px}
@@ -240,7 +230,6 @@
           <button class="chip sort on" data-s="date">発売日</button>
           <button class="chip sort" data-s="rev">レビュー</button>
           <button class="chip sort" data-s="price">価格</button>
-          <button class="chip sort" data-s="rank">ランク</button>
           <button class="chip sort" data-s="tagpop">タグ人気</button>
           <button class="dirbtn" id="dirbtn">▼ 降順</button>
         </div>
@@ -288,8 +277,6 @@
 </div>
 
 <script>
-const RANKS = {S:"var(--rS)", A:"var(--rA)", B:"var(--rB)", C:"var(--rC)", D:"var(--rD)"};
-const ORDER = {S:5, A:4, B:3, C:2, D:1};
 const KEY = "yuwasu_game_picks_v2";
 const GKEY = "yuwasu_gist_id";
 const TAGKEY = "yuwasu_tags_on";
@@ -305,7 +292,7 @@ function load(){ try{ return JSON.parse(localStorage.getItem(KEY)) || {}; }catch
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} }
 function saveTags(){ try{ localStorage.setItem(TAGKEY, JSON.stringify([...onTags])); }catch(e){} }
 function saveGenres(){ try{ localStorage.setItem("yuwasu_genres_on", JSON.stringify([...onGenres])); }catch(e){} }
-function st(id){ if(!state[id]) state[id] = {picked:false, rank:null, hidden:false, adopted:false}; return state[id]; }
+function st(id){ if(!state[id]) state[id] = {picked:false, hidden:false, adopted:false, shot:false}; return state[id]; }
 function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 
 /* ---------- Gist ---------- */
@@ -456,7 +443,6 @@ function sortList(list){
   }
   else if(sort==="rev") arr.sort((a,b)=>m*((b.recommendations||0)-(a.recommendations||0)));
   else if(sort==="price") arr.sort((a,b)=>m*((b.price||0)-(a.price||0)));
-  else if(sort==="rank") arr.sort((a,b)=>m*((ORDER[st(b.appid).rank]||0)-(ORDER[st(a.appid).rank]||0)));
   else if(sort==="tagpop") arr.sort((a,b)=>m*(tagScore(b)-tagScore(a)));
   else if(dir==="asc") arr.reverse();
   return arr;
@@ -498,7 +484,7 @@ function render(){
   if(!list.length){
     box.innerHTML = '<div class="empty">' +
       (step===2 ? '①で気になったタイルをタップして拾ってください。' :
-       step===3 ? '②で「採用する」を押すと、ここに並びます。' : '該当なし') + '</div>';
+       step===3 ? '②でタイルをタップして採用すると、ここに並びます。' : '該当なし') + '</div>';
   } else {
     box.innerHTML = list.map(g => tileHTML(g, false)).join("");
   }
@@ -520,9 +506,9 @@ function tileHTML(g, isHiddenSec){
   const s = st(g.appid);
   const cls = ["tile"];
   if(step===1 && !hideMode && s.picked) cls.push("picked");
-  if(s.rank) cls.push("ranked");
+  if(step===2 && s.adopted) cls.push("adopted");
+  if(step===3 && s.shot) cls.push("shot");
   if(step===1 && hideMode && s.hidden && !isHiddenSec) cls.push("markhide");
-  const rk = '<span class="rk"' + (s.rank?' style="background:'+RANKS[s.rank]+'"':'') + '>' + (s.rank||"") + '</span>';
   const noVideo = !g.trailer && !(step===1 && hideMode);
   const media = '<div class="media" data-id="'+g.appid+'">' +
     '<img src="' + esc(g.header || g.thumb || "") + '" loading="lazy" onerror="this.style.opacity=.15">' +
@@ -535,23 +521,11 @@ function tileHTML(g, isHiddenSec){
   fx.push('<span>Rev' + (g.recommendations||0) + '</span>');
   fx.push('<span>' + esc(g.price_text) + '</span>');
   fx.push('<span>' + (g.coming_soon?"発売前":(g.release_date||"?")) + '</span>');
-  let extra = "";
-  if(step===2){
-    extra = '<div class="ranks">' +
-      Object.keys(RANKS).map(r => '<button class="rb' + (s.rank===r?' on':'') + '" data-id="' + g.appid + '" data-r="' + r + '"' +
-        (s.rank===r?' style="background:'+RANKS[r]+';border-color:'+RANKS[r]+'"':'') + '>' + r + '</button>').join("") +
-      '</div>' +
-      '<div class="adoptrow"><button class="ab' + (s.adopted?' on':'') + '" data-id="' + g.appid + '">' +
-      (s.adopted?'採用済み':'採用する') + '</button>' +
-      '<button class="unpick" data-id="' + g.appid + '">確認中から外す</button></div>';
-  } else if(step===3){
-    extra = '<div class="adoptrow"><button class="ab on" data-id="' + g.appid + '">採用を外す</button></div>';
-  }
   const steam = '<div class="steamlink"><a href="' + esc(g.url) + '" target="_blank" rel="noopener">Steam ↗</a></div>';
   return '<div class="' + cls.join(' ') + '" data-id="' + g.appid + '">' +
-    media + rk + '<div class="check">' + (step===1&&hideMode?'✕':'✓') + '</div>' +
+    media + '<div class="check">' + (step===1&&hideMode?'✕':'✓') + '</div>' +
     '<div class="body"><div class="nm">' + esc(g.name) + '</div><div class="fx">' + fx.join("") + '</div></div>' +
-    extra + steam + '</div>';
+    steam + '</div>';
 }
 
 function findGame(id){ return GAMES.find(g => g.appid === id); }
@@ -569,51 +543,23 @@ function bindTiles(){
       t.onclick = () => {
         const s = st(id);
         if(hideMode){ s.hidden = !s.hidden; }
-        else { s.picked = !s.picked; if(!s.picked) s.rank = null; }
+        else { s.picked = !s.picked; if(!s.picked){ s.adopted = false; s.shot = false; } }
         save(); render();
       };
     } else {
-      if(media){
-        media.onclick = (e) => { e.stopPropagation();
-          const g = findGame(id);
-          if(g && g.trailer) openModal(g);
-        };
+      if(media && findGame(id).trailer){
+        media.onclick = (e) => { e.stopPropagation(); openModal(findGame(id)); };
       }
-      t.querySelectorAll(".rb").forEach(b => {
-        b.onclick = (e) => { e.stopPropagation();
-          const s = st(b.dataset.id);
-          s.rank = (s.rank===b.dataset.r)?null:b.dataset.r; save();
-          updateTileRank(t, s); };
-      });
-      t.querySelectorAll(".ab").forEach(b => {
-        b.onclick = (e) => { e.stopPropagation();
-          const s = st(b.dataset.id); s.adopted = !s.adopted; save();
-          if(step===3){ render(); return; }
-          b.classList.toggle("on", s.adopted);
-          b.textContent = s.adopted ? "採用済み" : "採用する";
-          updateCounts(); };
-      });
-      t.querySelectorAll(".unpick").forEach(b => {
-        b.onclick = (e) => { e.stopPropagation();
-          const s = st(b.dataset.id);
-          s.picked = false; s.rank = null; s.adopted = false;
-          save(); render(); };
-      });
+      t.onclick = () => {
+        const s = st(id);
+        if(step===2){ s.adopted = !s.adopted; if(!s.adopted) s.shot = false; }
+        else { s.shot = !s.shot; }
+        save(); render();
+      };
     }
   });
 }
 
-function updateTileRank(tile, s){
-  tile.classList.toggle("ranked", !!s.rank);
-  const rk = tile.querySelector(".rk");
-  if(rk){ rk.textContent = s.rank || ""; rk.style.background = s.rank ? RANKS[s.rank] : ""; }
-  tile.querySelectorAll(".rb").forEach(x => {
-    const on = s.rank === x.dataset.r;
-    x.classList.toggle("on", on);
-    x.style.background = on ? RANKS[x.dataset.r] : "";
-    x.style.borderColor = on ? RANKS[x.dataset.r] : "";
-  });
-}
 
 /* ---------- 動画ポップアップ ---------- */
 const modal = document.getElementById("modal");
@@ -685,9 +631,8 @@ document.addEventListener("keydown", e => { if(e.key==="Escape" && modal.classLi
 
 /* ---------- 書き出し・管理 ---------- */
 document.getElementById("ics").onclick = () => {
-  const adopted = GAMES.filter(g => st(g.appid).adopted);
-  const target = adopted.length ? adopted : GAMES.filter(g => st(g.appid).rank);
-  if(!target.length){ alert("採用（またはランク付け）したゲームがありません。"); return; }
+  const target = GAMES.filter(g => st(g.appid).adopted);
+  if(!target.length){ alert("採用したゲームがありません。"); return; }
   const pad = n => String(n).padStart(2,"0");
   const now = new Date();
   const stamp = now.getFullYear()+pad(now.getMonth()+1)+pad(now.getDate())+"T000000Z";
@@ -697,14 +642,14 @@ document.getElementById("ics").onclick = () => {
     const d = g.release_date.replace(/-/g,"");
     const nx = new Date(g.release_date+"T00:00:00"); nx.setDate(nx.getDate()+1);
     const de = nx.getFullYear()+pad(nx.getMonth()+1)+pad(nx.getDate());
-    const r = st(g.appid).rank || "-";
-    const desc = ["相性ランク: "+r,"発売日: "+g.release_date,"価格: "+g.price_text,
+    const shot = st(g.appid).shot;
+    const desc = ["撮影: "+(shot?"済み":"未"),"発売日: "+g.release_date,"価格: "+g.price_text,
       "体験版: "+(g.demo?"あり":"なし"),
       "プレイ人数: "+[g.solo?"ソロ可":"",g.coop?"協力":"",g.multi?"マルチ":""].filter(Boolean).join("/"),
       "Steam: "+g.url].join("\\n");
     ics += "BEGIN:VEVENT\r\nUID:steam-"+g.appid+"@yuwasu\r\nDTSTAMP:"+stamp+"\r\n";
     ics += "DTSTART;VALUE=DATE:"+d+"\r\nDTEND;VALUE=DATE:"+de+"\r\n";
-    ics += "SUMMARY:【"+r+"】"+g.name.replace(/[,;\\]/g,m=>"\\"+m)+"\r\n";
+    ics += "SUMMARY:"+(shot?"【撮影済】":"")+g.name.replace(/[,;\\]/g,m=>"\\"+m)+"\r\n";
     ics += "DESCRIPTION:"+desc.replace(/[,;]/g,m=>"\\"+m)+"\r\nEND:VEVENT\r\n";
   });
   ics += "END:VCALENDAR\r\n";
