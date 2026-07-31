@@ -319,7 +319,7 @@
     <div class="ytfield">
       <div class="lb">概要欄</div>
       <div class="ytrow">
-        <textarea class="searchbox" id="yt-desc" rows="9"></textarea>
+        <textarea class="searchbox" id="yt-desc" rows="16"></textarea>
         <button class="sbact" data-copy="yt-desc">コピー</button>
       </div>
     </div>
@@ -330,6 +330,7 @@
         <button class="sbact" data-copy="yt-tags">コピー</button>
       </div>
       <div class="gnote" id="yt-tagslen"></div>
+      <div class="gnote" id="yt-fetchnote"></div>
     </div>
   </div>
 </div>
@@ -739,14 +740,6 @@ function findGameByQuery(qRaw){
   return hit || null;
 }
 
-function playModeText(g){
-  const arr=[];
-  if(g.solo) arr.push("ソロ可");
-  if(g.coop) arr.push("協力");
-  if(g.multi) arr.push("マルチ");
-  return arr.length ? arr.join("/") : "-";
-}
-
 // 重複除去（大文字小文字を無視）。limitがあれば件数を絞る
 function dedupList(list, limit){
   const seen = new Set(); const out = [];
@@ -771,76 +764,115 @@ function tagsToYoutubeString(tags){
   return out.join(", ");
 }
 
-// タイトル文字列から簡易キーワードを抽出（AIを使わず記号・空白で分割するだけ）
-function extractKeywords(str, limit){
-  const words = normStr(str).split(/[\s\u3000\-\u2013_:：|｜／\/,、。!！?？"'"'（）()\[\]【】]+/)
-    .filter(w => w.length >= 2);
-  return dedupList(words, limit);
-}
+/* ---- 自分の定型フォーマット（チャンネルの既定文言） ---- */
+const YT_CHANNEL = {
+  name: "まかべきりしま",
+  nameKanji: "真壁霧島",
+  youtube: "https://www.youtube.com/channel/UCUkuWw-f8tjOlAwwLBByQTg?sub_confirmation=1",
+  x: "https://x.com/makabekirishima"
+};
+const PH = { en: "（英語表記）", kana: "（カタカナ表記）", dev: "開発者名", pub: "販売者名" };
 
-function buildYtMeta(g, rawQuery){
-  if(g){
-    const genres = g.genres || [];
-    const tags = g.tags || [];
-    const flagTitle = (g.demo ? "【体験版】" : "") + (g.coming_soon ? "【発売前】" : "");
-    const title = flagTitle + g.name + "を実況プレイ";
-
-    const hashtags = dedupList(["ゲーム実況", "Steam", ...tags], 8)
-      .map(t => "#" + t.replace(/[\s\u3000]+/g, "")).join(" ");
-
-    const descLines = [
-      g.name + " を実況プレイしました。",
-      "",
-      "▼ゲーム情報",
-      "ジャンル: " + (genres.length ? genres.join(" / ") : "-"),
-      "タグ: " + (tags.length ? tags.slice(0, 8).join(", ") : "-"),
-      "発売日: " + (g.coming_soon ? "発売前" : (g.release_date || "不明")),
-      "価格: " + (g.price_text || "-"),
-      "プレイ人数: " + playModeText(g),
-      "Steamストアページ: " + (g.url || "-"),
-      "",
-      hashtags
-    ];
-
-    const tagPool = [g.name, ...genres, ...tags, "ゲーム実況", "Let's Play", "実況プレイ", "Steam", "PCゲーム"];
-    if(g.demo) tagPool.push("体験版");
-    if(g.solo) tagPool.push("ソロプレイ");
-    if(g.coming_soon) tagPool.push("発売前");
-
-    return {
-      title: title,
-      desc: descLines.join("\n"),
-      tags: tagsToYoutubeString(dedupList(tagPool))
-    };
+// appid から Steam Store API で英語名・開発元・販売元を取得（AI不使用、公式APIの値をそのまま使うだけ）
+// ブラウザからの直アクセスはCORSで弾かれる前提のため、失敗したら公開CORSプロキシ経由で再試行する
+async function fetchSteamDetails(appid){
+  if(!appid) return null;
+  const direct = "https://store.steampowered.com/api/appdetails?appids=" + appid + "&l=english";
+  const viaProxy = "https://api.allorigins.win/raw?url=" + encodeURIComponent(direct);
+  for(const url of [direct, viaProxy]){
+    try{
+      const r = await fetch(url);
+      if(!r.ok) continue;
+      const j = await r.json();
+      const entry = j[appid];
+      if(entry && entry.success && entry.data){
+        return {
+          nameEn: entry.data.name || null,
+          developer: (entry.data.developers && entry.data.developers[0]) || null,
+          publisher: (entry.data.publishers && entry.data.publishers[0]) || null
+        };
+      }
+    }catch(e){ /* 次の手段を試す */ }
   }
-
-  // GAMESに一致がない場合：入力文字列だけから機械的に生成するフォールバック
-  const raw = normStr(rawQuery);
-  const isUrl = /^https?:\/\//.test(raw);
-  const name = isUrl ? "このゲーム" : (raw || "このゲーム");
-  const title = name + "を実況プレイ";
-
-  const descLines = [name + " を実況プレイしました。", ""];
-  if(isUrl) descLines.push("Steamストアページ: " + raw, "");
-  descLines.push("#ゲーム実況 #Steam");
-
-  const tagPool = [...(isUrl ? [] : extractKeywords(raw, 6)), "ゲーム実況", "Let's Play", "実況プレイ", "PCゲーム"];
-
-  return {
-    title: title,
-    desc: descLines.join("\n"),
-    tags: tagsToYoutubeString(dedupList(tagPool))
-  };
+  return null; // 取得できなければ呼び出し側でプレースホルダーのまま
 }
 
-function openYtModal(g, rawQueryFallback){
-  const meta = buildYtMeta(g, rawQueryFallback);
+function buildYtTitle(jpName){
+  // 【ゲームタイトル】の後は自分で話数などを入力する前提で空けておく
+  return "【" + jpName + "】 ";
+}
+
+function buildYtDesc(jpName, enName, dev, pub, storeUrl){
+  return [
+    "【" + jpName + "】の実況です。（一言）",
+    "",
+    "▼ノーカット版（配信アーカイブ・限定公開）",
+    "（URL・毎回変わる）",
+    "",
+    "▼シリーズ",
+    "前→",
+    "次→",
+    "再生リスト→",
+    "",
+    "★" + YT_CHANNEL.name,
+    YT_CHANNEL.youtube,
+    "",
+    "★X",
+    YT_CHANNEL.x,
+    "",
+    "★ゲーム情報",
+    "タイトル：【" + jpName + "】 【" + enName + "】",
+    "開発：" + dev,
+    "販売：" + pub,
+    "ストアページ：" + (storeUrl || ""),
+    "",
+    "#" + jpName + " #ホラーゲーム実況 #インディーホラー #ホラゲー実況 #" + YT_CHANNEL.name
+  ].join("\n");
+}
+
+function buildYtTags(jpName, enName, kanaName){
+  const list = [enName, kanaName, jpName + " 実況", "ホラーゲーム実況", "ホラーゲーム", "ホラゲー",
+    "ホラゲー実況", "インディーホラー", "実況プレイ", YT_CHANNEL.nameKanji, YT_CHANNEL.name];
+  return tagsToYoutubeString(dedupList(list));
+}
+
+let ytGen = 0; // 連続でボタンを押した場合に古い非同期取得結果で上書きしないための世代カウンタ
+
+async function openYtModal(g, rawQueryFallback){
+  const myGen = ++ytGen;
+  const jpName = g ? g.name : (normStr(rawQueryFallback) || "このゲーム");
+  const storeUrl = g ? (g.url || "") : (/^https?:\/\//.test(normStr(rawQueryFallback)) ? normStr(rawQueryFallback) : "");
+  const appid = g ? g.appid : extractAppIdFromUrl(rawQueryFallback);
+
   document.getElementById("ytmodalcap").textContent = "YouTube用メタデータ" + (g ? "：" + g.name : "");
-  document.getElementById("yt-title").value = meta.title;
-  document.getElementById("yt-desc").value = meta.desc;
-  document.getElementById("yt-tags").value = meta.tags;
-  document.getElementById("yt-tagslen").textContent = "タグ文字数: " + meta.tags.length + " / 500";
+  document.getElementById("yt-title").value = buildYtTitle(jpName);
+  document.getElementById("yt-desc").value = buildYtDesc(jpName, PH.en, PH.dev, PH.pub, storeUrl);
+  const tags0 = buildYtTags(jpName, PH.en, PH.kana);
+  document.getElementById("yt-tags").value = tags0;
+  document.getElementById("yt-tagslen").textContent = "タグ文字数: " + tags0.length + " / 500";
+  const fnote = document.getElementById("yt-fetchnote");
+  fnote.textContent = appid ? "Steamから英語表記・開発元・販売元を取得中…" : "appidが分からないため英語表記・開発元・販売元は手入力してください。";
+  fnote.className = "gnote";
   ytmodal.classList.add("show");
+
+  if(!appid) return;
+  const info = await fetchSteamDetails(appid);
+  if(myGen !== ytGen) return; // その間に別のカードが開かれていたら反映しない
+
+  if(!info){
+    fnote.textContent = "Steamからの自動取得に失敗しました。英語表記・開発元・販売元は手入力してください。";
+    fnote.className = "gnote err";
+    return;
+  }
+  const enName = info.nameEn || PH.en;
+  const dev = info.developer || PH.dev;
+  const pub = info.publisher || PH.pub;
+  document.getElementById("yt-desc").value = buildYtDesc(jpName, enName, dev, pub, storeUrl);
+  const tags1 = buildYtTags(jpName, enName, PH.kana);
+  document.getElementById("yt-tags").value = tags1;
+  document.getElementById("yt-tagslen").textContent = "タグ文字数: " + tags1.length + " / 500";
+  fnote.textContent = "Steamから英語表記・開発元・販売元を取得しました(カタカナ表記のみ手入力)。";
+  fnote.className = "gnote ok";
 }
 function closeYtModal(){ ytmodal.classList.remove("show"); }
 document.getElementById("ytmodalclose").onclick = closeYtModal;
