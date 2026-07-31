@@ -136,6 +136,10 @@
   .tile .removebtn{background:none;border:none;padding:0;cursor:pointer;
     color:var(--hide);font-size:11px;font-weight:700;white-space:nowrap}
   .tile .removebtn:hover{color:#e08a8a}
+  .tile .ytbtn{background:none;border:none;padding:0;cursor:pointer;
+    color:var(--pick);font-size:11px;font-weight:700;white-space:nowrap}
+  .tile .ytbtn:hover{color:#9d90f7}
+  .tile .footer .rbox{display:flex;gap:8px;align-items:center;margin-left:auto}
 
   /* 非表示セクション */
   .hidesec{margin-top:26px;border-top:1px solid var(--line);padding-top:16px}
@@ -155,6 +159,20 @@
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .modal .fallback{padding:40px 20px;text-align:center;color:var(--sub);font-size:13px}
   .modal .fallback a{color:#8fb8e8}
+
+  /* YouTube用メタ生成ポップアップ */
+  .ytbox{width:min(640px,100%);background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    overflow:hidden;position:relative;padding:18px}
+  .ytbox .close{position:absolute;top:-38px;right:0;background:none;border:none;color:#fff;
+    font-size:24px;cursor:pointer;line-height:1}
+  .ytbox .cap{position:absolute;top:-34px;left:0;color:var(--sub);font-size:12.5px;max-width:80%;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ytfield{margin-bottom:14px}
+  .ytfield:last-child{margin-bottom:0}
+  .ytfield .lb{font-size:10px;color:var(--faint);font-weight:700;letter-spacing:.1em;margin-bottom:6px;text-transform:uppercase}
+  .ytrow{display:flex;gap:7px;align-items:flex-start}
+  .ytrow input.searchbox, .ytrow textarea.searchbox{flex:1;min-width:0;font-family:inherit;resize:vertical}
+  .ytrow .sbact{width:auto;margin-top:0;flex:none;white-space:nowrap}
 
   @media (max-width:720px){
     .layout{flex-direction:column;padding:0}
@@ -244,6 +262,13 @@
         <button class="hidebtn" id="hidebtn">非表示モード</button>
         <div class="hidenote" id="hidenote">タイルをタップで非表示対象に。もう一度このボタンで確定。一覧下部の「非表示中」から戻せます。</div>
       </div>
+
+      <div class="sec" id="ytgen-ctrl" style="display:none">
+        <div class="lb">YouTube用に生成</div>
+        <input class="searchbox" id="ytquery" type="text" placeholder="ストアURL または タイトルを入力" autocomplete="off">
+        <button class="sbact pri" id="ytgenbtn">生成</button>
+        <div class="gnote" id="ytquerynote"></div>
+      </div>
     </aside>
 
     <main class="main">
@@ -277,6 +302,35 @@
     <div class="cap" id="modalcap"></div>
     <button class="close" id="modalclose">✕</button>
     <div id="modalbody"></div>
+  </div>
+</div>
+
+<div class="modal" id="ytmodal">
+  <div class="ytbox">
+    <div class="cap" id="ytmodalcap">YouTube用メタデータ</div>
+    <button class="close" id="ytmodalclose">✕</button>
+    <div class="ytfield">
+      <div class="lb">動画タイトル</div>
+      <div class="ytrow">
+        <input class="searchbox" id="yt-title" type="text">
+        <button class="sbact" data-copy="yt-title">コピー</button>
+      </div>
+    </div>
+    <div class="ytfield">
+      <div class="lb">概要欄</div>
+      <div class="ytrow">
+        <textarea class="searchbox" id="yt-desc" rows="9"></textarea>
+        <button class="sbact" data-copy="yt-desc">コピー</button>
+      </div>
+    </div>
+    <div class="ytfield">
+      <div class="lb">タグ（詳細設定）</div>
+      <div class="ytrow">
+        <textarea class="searchbox" id="yt-tags" rows="3"></textarea>
+        <button class="sbact" data-copy="yt-tags">コピー</button>
+      </div>
+      <div class="gnote" id="yt-tagslen"></div>
+    </div>
   </div>
 </div>
 
@@ -343,6 +397,7 @@ document.querySelectorAll(".step").forEach(b => {
     document.querySelectorAll(".step").forEach(x => x.classList.toggle("on", x===b));
     document.getElementById("headtitle").textContent = STEPTITLE[step];
     document.getElementById("hidesec-ctrl").style.display = (step===1) ? "" : "none";
+    document.getElementById("ytgen-ctrl").style.display = (step===3) ? "" : "none";
     openSidebar(false); render(); };
 });
 
@@ -527,9 +582,11 @@ function tileHTML(g, isHiddenSec){
   fx.push('<span>' + (g.coming_soon?"発売前":(g.release_date||"?")) + '</span>');
   const remove = (step===2 || step===3)
     ? '<button class="removebtn" data-id="' + g.appid + '">↙ Drop</button>' : '';
+  const yt = (step===3)
+    ? '<button class="ytbtn" data-id="' + g.appid + '">YouTube生成</button>' : '';
   const footer = '<div class="footer">' +
     '<a class="steamlink" href="' + esc(g.url) + '" target="_blank" rel="noopener">Steam ↗</a>' +
-    remove + '</div>';
+    '<span class="rbox">' + yt + remove + '</span></div>';
   return '<div class="' + cls.join(' ') + '" data-id="' + g.appid + '">' +
     media + '<div class="check">' + (step===1&&hideMode?'✕':'✓') + '</div>' +
     '<div class="body"><div class="nm">' + esc(g.name) + '</div><div class="fx">' + fx.join("") + '</div></div>' +
@@ -547,6 +604,13 @@ function bindTiles(){
       if(step===2){ s.picked = false; s.adopted = false; s.shot = false; }
       else { s.adopted = false; s.shot = false; }
       save(); render();
+    };
+  });
+
+  document.querySelectorAll(".ytbtn").forEach(b => {
+    b.onclick = (e) => { e.stopPropagation();
+      const g = findGame(b.dataset.id);
+      if(g) openYtModal(g);
     };
   });
 
@@ -644,7 +708,165 @@ function closeModal(){
 }
 document.getElementById("modalclose").onclick = closeModal;
 modal.onclick = (e) => { if(e.target === modal) closeModal(); };
-document.addEventListener("keydown", e => { if(e.key==="Escape" && modal.classList.contains("show")) closeModal(); });
+document.addEventListener("keydown", e => {
+  if(e.key==="Escape" && modal.classList.contains("show")) closeModal();
+  if(e.key==="Escape" && ytmodal.classList.contains("show")) closeYtModal();
+});
+
+/* ---------- YouTube用メタ生成（AI不使用・ページ内完結） ---------- */
+const ytmodal = document.getElementById("ytmodal");
+
+function normStr(s){ return String(s==null?"":s).trim(); }
+
+function extractAppIdFromUrl(str){
+  const m = normStr(str).match(/\/app\/(\d+)/);
+  return m ? m[1] : null;
+}
+
+// ストアURL／ゲーム名の文字列から、読み込み済みGAMESの中に該当があれば返す（なければnull）
+function findGameByQuery(qRaw){
+  const q = normStr(qRaw);
+  if(!q) return null;
+  const appId = extractAppIdFromUrl(q);
+  if(appId){
+    const hit = GAMES.find(g => String(g.appid) === String(appId));
+    if(hit) return hit;
+  }
+  const ql = q.toLowerCase();
+  let hit = GAMES.find(g => (g.name||"").toLowerCase() === ql);
+  if(hit) return hit;
+  hit = GAMES.find(g => (g.name||"").toLowerCase().includes(ql) || ql.includes((g.name||"").toLowerCase()));
+  return hit || null;
+}
+
+function playModeText(g){
+  const arr=[];
+  if(g.solo) arr.push("ソロ可");
+  if(g.coop) arr.push("協力");
+  if(g.multi) arr.push("マルチ");
+  return arr.length ? arr.join("/") : "-";
+}
+
+// 重複除去（大文字小文字を無視）。limitがあれば件数を絞る
+function dedupList(list, limit){
+  const seen = new Set(); const out = [];
+  list.forEach(t => {
+    t = normStr(t);
+    if(!t) return;
+    const k = t.toLowerCase();
+    if(seen.has(k)) return;
+    seen.add(k); out.push(t);
+  });
+  return limit ? out.slice(0, limit) : out;
+}
+
+// YouTubeのタグ欄は合計500文字までのため、収まる分だけカンマ区切りで詰める
+function tagsToYoutubeString(tags){
+  const out = []; let len = 0;
+  for(const t of tags){
+    const add = (out.length ? ", " : "") + t;
+    if(len + add.length > 500) break;
+    out.push(t); len += add.length;
+  }
+  return out.join(", ");
+}
+
+// タイトル文字列から簡易キーワードを抽出（AIを使わず記号・空白で分割するだけ）
+function extractKeywords(str, limit){
+  const words = normStr(str).split(/[\s\u3000\-\u2013_:：|｜／\/,、。!！?？"'"'（）()\[\]【】]+/)
+    .filter(w => w.length >= 2);
+  return dedupList(words, limit);
+}
+
+function buildYtMeta(g, rawQuery){
+  if(g){
+    const genres = g.genres || [];
+    const tags = g.tags || [];
+    const flagTitle = (g.demo ? "【体験版】" : "") + (g.coming_soon ? "【発売前】" : "");
+    const title = flagTitle + g.name + "を実況プレイ";
+
+    const hashtags = dedupList(["ゲーム実況", "Steam", ...tags], 8)
+      .map(t => "#" + t.replace(/[\s\u3000]+/g, "")).join(" ");
+
+    const descLines = [
+      g.name + " を実況プレイしました。",
+      "",
+      "▼ゲーム情報",
+      "ジャンル: " + (genres.length ? genres.join(" / ") : "-"),
+      "タグ: " + (tags.length ? tags.slice(0, 8).join(", ") : "-"),
+      "発売日: " + (g.coming_soon ? "発売前" : (g.release_date || "不明")),
+      "価格: " + (g.price_text || "-"),
+      "プレイ人数: " + playModeText(g),
+      "Steamストアページ: " + (g.url || "-"),
+      "",
+      hashtags
+    ];
+
+    const tagPool = [g.name, ...genres, ...tags, "ゲーム実況", "Let's Play", "実況プレイ", "Steam", "PCゲーム"];
+    if(g.demo) tagPool.push("体験版");
+    if(g.solo) tagPool.push("ソロプレイ");
+    if(g.coming_soon) tagPool.push("発売前");
+
+    return {
+      title: title,
+      desc: descLines.join("\n"),
+      tags: tagsToYoutubeString(dedupList(tagPool))
+    };
+  }
+
+  // GAMESに一致がない場合：入力文字列だけから機械的に生成するフォールバック
+  const raw = normStr(rawQuery);
+  const isUrl = /^https?:\/\//.test(raw);
+  const name = isUrl ? "このゲーム" : (raw || "このゲーム");
+  const title = name + "を実況プレイ";
+
+  const descLines = [name + " を実況プレイしました。", ""];
+  if(isUrl) descLines.push("Steamストアページ: " + raw, "");
+  descLines.push("#ゲーム実況 #Steam");
+
+  const tagPool = [...(isUrl ? [] : extractKeywords(raw, 6)), "ゲーム実況", "Let's Play", "実況プレイ", "PCゲーム"];
+
+  return {
+    title: title,
+    desc: descLines.join("\n"),
+    tags: tagsToYoutubeString(dedupList(tagPool))
+  };
+}
+
+function openYtModal(g, rawQueryFallback){
+  const meta = buildYtMeta(g, rawQueryFallback);
+  document.getElementById("ytmodalcap").textContent = "YouTube用メタデータ" + (g ? "：" + g.name : "");
+  document.getElementById("yt-title").value = meta.title;
+  document.getElementById("yt-desc").value = meta.desc;
+  document.getElementById("yt-tags").value = meta.tags;
+  document.getElementById("yt-tagslen").textContent = "タグ文字数: " + meta.tags.length + " / 500";
+  ytmodal.classList.add("show");
+}
+function closeYtModal(){ ytmodal.classList.remove("show"); }
+document.getElementById("ytmodalclose").onclick = closeYtModal;
+ytmodal.onclick = (e) => { if(e.target === ytmodal) closeYtModal(); };
+
+document.getElementById("ytgenbtn").onclick = () => {
+  const noteEl = document.getElementById("ytquerynote");
+  const q = document.getElementById("ytquery").value;
+  if(!normStr(q)){ noteEl.textContent = "ストアURLかタイトルを入力してください。"; noteEl.className = "gnote err"; return; }
+  noteEl.textContent = ""; noteEl.className = "gnote";
+  const g = findGameByQuery(q);
+  openYtModal(g, g ? null : q);
+};
+
+document.querySelectorAll("[data-copy]").forEach(b => {
+  b.onclick = () => {
+    const el = document.getElementById(b.dataset.copy);
+    const text = el.value;
+    const done = () => { const orig = b.textContent; b.textContent = "コピー済"; setTimeout(()=>{ b.textContent = orig; }, 1200); };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(done).catch(() => { el.select(); document.execCommand("copy"); done(); });
+    } else {
+      el.select(); document.execCommand("copy"); done();
+    }
+  };
+});
 
 /* ---------- 書き出し・管理 ---------- */
 document.getElementById("ics").onclick = () => {
